@@ -7,6 +7,76 @@ function getApiKey(): string | null {
   return process.env.GEMINI_API_KEY || null;
 }
 
+// Analyzes image using Gemini Vision API
+export async function analyzeImage(imgData: string, mimeType: string): Promise<string> {
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    console.log("No Gemini API key found, using mock vision analysis.");
+    // Wait for 1 second to simulate network delay
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    return `[Mock Vision Analysis]
+Visual Content: Elegant modern branding layout.
+Key Colors: Navy blue, gold accents, clean white backgrounds.
+Objects: Professional product showcase.
+Text detected: "Premium Brand Solutions".
+Vibe: High-end, premium, minimalist, target audience is professionals.`;
+  }
+
+  let base64Data = imgData;
+  let detectedMimeType = mimeType;
+
+  // Extract base64 and mime type if it is a data URL
+  const matches = imgData.match(/^data:(image\/[a-z]+);base64,(.+)$/);
+  if (matches) {
+    detectedMimeType = matches[1];
+    base64Data = matches[2];
+  }
+
+  const model = "gemini-3.6-flash";
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+  const requestBody = {
+    contents: [
+      {
+        parts: [
+          {
+            inlineData: {
+              mimeType: detectedMimeType,
+              data: base64Data
+            }
+          },
+          {
+            text: "Analyze this image and describe: 1. Visual elements and style 2. Key products/objects/features shown 3. Color palette and branding elements 4. Visible text/OCR 5. Mood/vibe. Keep the description compact, clear, and focused on helping a social media copywriter generate relevant content."
+          }
+        ]
+      }
+    ]
+  };
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(requestBody)
+  });
+
+  if (!response.ok) {
+    const errText = await response.text();
+    console.error("Gemini Image Analysis API error:", errText);
+    throw new Error(`Gemini Image Analysis failed with status ${response.status}: ${errText}`);
+  }
+
+  const result = await response.json();
+  const textContent = result.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!textContent) {
+    throw new Error("Gemini Image Analysis returned an empty response.");
+  }
+
+  return textContent;
+}
+
+
 // System prompt template
 const SYSTEM_PROMPT = `You are an elite full-stack social media strategist, brand consultant, and AI copywriter.
 Your goal is to generate high-converting, publication-ready content calendars for premium brands.

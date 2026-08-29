@@ -71,10 +71,9 @@ export default function Home() {
       .map(f => `[Source: ${f.name}]\n${f.content}`)
       .join('\n\n');
 
-    // Aggregate image base64 representations for vision analysis
-    const images = files
-      .filter(f => f.status === 'success' && f.base64Data)
-      .map(f => f.base64Data as string);
+    // We process the images on upload and include their descriptions in referenceText.
+    // To prevent Vercel payload limit issues, we do not send the raw base64 data to /api/generate again.
+    const images: string[] = [];
 
     try {
       const res = await fetch('/api/generate', {
@@ -89,8 +88,20 @@ export default function Home() {
       });
 
       if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.error || 'Failed to generate content calendar.');
+        let errorMessage = `Request failed with status ${res.status}`;
+        try {
+          const contentType = res.headers.get('content-type');
+          if (contentType && contentType.includes('application/json')) {
+            const errData = await res.json();
+            errorMessage = errData.error || errorMessage;
+          } else {
+            const textData = await res.text();
+            errorMessage = textData || errorMessage;
+          }
+        } catch (parseErr) {
+          // Use default error message if reading response fails
+        }
+        throw new Error(errorMessage);
       }
 
       const calendar = await res.json();
@@ -139,8 +150,20 @@ export default function Home() {
       });
 
       if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.error || 'Failed to regenerate post.');
+        let errorMessage = `Request failed with status ${res.status}`;
+        try {
+          const contentType = res.headers.get('content-type');
+          if (contentType && contentType.includes('application/json')) {
+            const errData = await res.json();
+            errorMessage = errData.error || errorMessage;
+          } else {
+            const textData = await res.text();
+            errorMessage = textData || errorMessage;
+          }
+        } catch (parseErr) {
+          // Use default error message if reading response fails
+        }
+        throw new Error(errorMessage);
       }
 
       const newPost = await res.json();

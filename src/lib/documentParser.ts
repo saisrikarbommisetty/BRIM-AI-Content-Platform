@@ -2,11 +2,57 @@ import mammoth from 'mammoth';
 import * as XLSX from 'xlsx';
 import AdmZip from 'adm-zip';
 
+// Polyfill DOMMatrix for Node.js environments (Next.js serverless/runtime) to prevent pdf-parse/pdfjs crashes
+const g = (typeof globalThis !== 'undefined' ? globalThis : typeof global !== 'undefined' ? global : typeof window !== 'undefined' ? window : {}) as any;
+if (!g.DOMMatrix) {
+  g.DOMMatrix = class DOMMatrix {};
+}
+if (typeof global !== 'undefined' && !global.DOMMatrix) {
+  (global as any).DOMMatrix = g.DOMMatrix;
+}
+
 export async function parsePdf(buffer: Buffer): Promise<string> {
   try {
-    const pdfParse = require('pdf-parse');
-    const data = await pdfParse(buffer);
-    return data.text || '';
+    const pdfParseModule = require('pdf-parse');
+    let parserFn = pdfParseModule;
+    if (typeof pdfParseModule !== 'function') {
+      if (typeof pdfParseModule.PDFParse === 'function') {
+        parserFn = pdfParseModule.PDFParse;
+      } else if (typeof pdfParseModule.default === 'function') {
+        parserFn = pdfParseModule.default;
+      }
+    }
+    
+    if (typeof parserFn !== 'function') {
+      throw new Error('No valid PDF parsing function found in pdf-parse module.');
+    }
+
+    let text = '';
+    try {
+      // Try class-based constructor instantiation (for modern pdf-parse)
+      const instance = new parserFn({ data: buffer });
+      const data = await instance.getText();
+      text = data.text || '';
+      if (typeof instance.destroy === 'function') {
+        await instance.destroy();
+      }
+    } catch (e: any) {
+      // If constructor call fails because it's a regular function or class error, fallback to classic call
+      if (e.message && (e.message.includes("is not a constructor") || e.message.includes("without 'new'"))) {
+        const data = await parserFn(buffer);
+        text = data.text || '';
+      } else {
+        // Fallback for classic function call just in case it threw for other reasons during new
+        try {
+          const data = await parserFn(buffer);
+          text = data.text || '';
+        } catch (classicErr) {
+          throw e; // Rethrow original error if both failed
+        }
+      }
+    }
+
+    return text;
   } catch (error: any) {
     console.error('PDF parsing error:', error);
     throw new Error(`Failed to parse PDF: ${error.message || error}`);

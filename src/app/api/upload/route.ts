@@ -1,9 +1,25 @@
+// Polyfill DOMMatrix for PDF parsing in Next.js environment
+const g = (typeof globalThis !== 'undefined' ? globalThis : typeof global !== 'undefined' ? global : typeof window !== 'undefined' ? window : {}) as any;
+if (!g.DOMMatrix) {
+  g.DOMMatrix = class DOMMatrix {};
+}
+if (typeof global !== 'undefined' && !global.DOMMatrix) {
+  (global as any).DOMMatrix = g.DOMMatrix;
+}
+
 import { NextRequest, NextResponse } from 'next/server';
 import { parseDocument } from '@/lib/documentParser';
+import { analyzeImage } from '@/lib/ai';
 
 export async function POST(req: NextRequest) {
   try {
-    const formData = await req.formData();
+    let formData;
+    try {
+      formData = await req.formData();
+    } catch (e: any) {
+      return NextResponse.json({ error: 'Invalid form data or no file sent.' }, { status: 400 });
+    }
+
     const file = formData.get('file') as File | null;
     
     if (!file) {
@@ -21,11 +37,22 @@ export async function POST(req: NextRequest) {
     // Parse document using the extraction pipeline
     const parsed = await parseDocument(file.name, file.type, buffer);
 
+    let text = parsed.text;
+    if (parsed.isImage && parsed.base64Data) {
+      try {
+        const visualDescription = await analyzeImage(parsed.base64Data, file.type);
+        text = `[Image Analysis for: ${file.name}]\n${visualDescription}`;
+      } catch (err: any) {
+        console.error('Image visual analysis error:', err);
+        text = `[Image File: ${file.name}] (Visual analysis failed: ${err.message || err})`;
+      }
+    }
+
     return NextResponse.json({
       name: file.name,
       type: file.type,
       size: file.size,
-      text: parsed.text,
+      text: text,
       isImage: parsed.isImage,
       base64Data: parsed.base64Data
     });
@@ -38,3 +65,4 @@ export async function POST(req: NextRequest) {
   }
 }
 export const dynamic = 'force-dynamic';
+

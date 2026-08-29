@@ -93,8 +93,20 @@ export default function FileUploader({
       });
 
       if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || 'Upload and text extraction failed.');
+        let errorMessage = `Upload failed with status ${res.status}`;
+        try {
+          const contentType = res.headers.get('content-type');
+          if (contentType && contentType.includes('application/json')) {
+            const errorData = await res.json();
+            errorMessage = errorData.error || errorMessage;
+          } else {
+            const textData = await res.text();
+            errorMessage = textData || errorMessage;
+          }
+        } catch (parseErr) {
+          // Use default error message if reading response fails
+        }
+        throw new Error(errorMessage);
       }
 
       const data = await res.json();
