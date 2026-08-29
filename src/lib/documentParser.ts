@@ -13,48 +13,52 @@ if (typeof global !== 'undefined' && !global.DOMMatrix) {
 
 export async function parsePdf(buffer: Buffer): Promise<string> {
   try {
-    const pdfParseModule = require('pdf-parse');
-    let parserFn = pdfParseModule;
-    if (typeof pdfParseModule !== 'function') {
-      if (typeof pdfParseModule.PDFParse === 'function') {
-        parserFn = pdfParseModule.PDFParse;
-      } else if (typeof pdfParseModule.default === 'function') {
-        parserFn = pdfParseModule.default;
+    // Dynamically import pdfjs-dist legacy build for Node environment compatibility
+    // @ts-ignore
+    const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+    
+    const uint8Array = new Uint8Array(buffer);
+    const loadingTask = pdfjs.getDocument({
+      data: uint8Array,
+      useSystemFonts: true,
+      disableFontFace: true,
+    });
+    
+    const pdfDoc = await loadingTask.promise;
+    let text = '';
+    
+    for (let i = 1; i <= pdfDoc.numPages; i++) {
+      const page = await pdfDoc.getPage(i);
+      const textContent = await page.getTextContent();
+      
+      let pageText = '';
+      let lastY = undefined;
+      
+      for (const item of textContent.items as any[]) {
+        const y = item.transform[5];
+        if (lastY !== undefined && Math.abs(y - lastY) > 5) {
+          pageText += '\n';
+        } else if (lastY !== undefined && item.str.trim()) {
+          pageText += ' ';
+        }
+        pageText += item.str;
+        lastY = y;
+      }
+      
+      if (pageText.trim()) {
+        text += pageText + '\n\n';
       }
     }
     
-    if (typeof parserFn !== 'function') {
-      throw new Error('No valid PDF parsing function found in pdf-parse module.');
-    }
-
-    let text = '';
-    try {
-      // Try class-based constructor instantiation (for modern pdf-parse)
-      const instance = new parserFn({ data: buffer });
-      const data = await instance.getText();
-      text = data.text || '';
-      if (typeof instance.destroy === 'function') {
-        await instance.destroy();
-      }
-    } catch (e: any) {
-      // If constructor call fails because it's a regular function or class error, fallback to classic call
-      if (e.message && (e.message.includes("is not a constructor") || e.message.includes("without 'new'"))) {
-        const data = await parserFn(buffer);
-        text = data.text || '';
-      } else {
-        // Fallback for classic function call just in case it threw for other reasons during new
-        try {
-          const data = await parserFn(buffer);
-          text = data.text || '';
-        } catch (classicErr) {
-          throw e; // Rethrow original error if both failed
-        }
-      }
-    }
-
-    return text;
+    return text.trim();
   } catch (error: any) {
     console.error('PDF parsing error:', error);
+    if (error.name === 'PasswordException') {
+      throw new Error('Failed to parse PDF: This PDF is password-protected.');
+    }
+    if (error.name === 'InvalidPDFException') {
+      throw new Error('Failed to parse PDF: The PDF file is invalid or corrupted.');
+    }
     throw new Error(`Failed to parse PDF: ${error.message || error}`);
   }
 }
