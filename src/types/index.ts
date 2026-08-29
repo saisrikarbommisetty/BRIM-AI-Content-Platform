@@ -5,6 +5,7 @@ export interface Post {
   caption: string;
   visualDirection: string;
   hashtags: string[];
+  usedQuotaFallback?: boolean;
 }
 
 export interface GeneratedCalendar {
@@ -12,6 +13,7 @@ export interface GeneratedCalendar {
   duration: string;
   totalPosts: number;
   posts: Post[];
+  usedQuotaFallback?: boolean;
 }
 
 export interface ReferenceFile {
@@ -26,6 +28,7 @@ export interface ReferenceFile {
   originalSize?: number;
   optimizedSize?: number;
   isCompressed?: boolean;
+  usedQuotaFallback?: boolean;
 }
 
 export type DurationOption = '1week' | '2weeks' | '1month';

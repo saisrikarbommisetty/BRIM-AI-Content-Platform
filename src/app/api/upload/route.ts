@@ -9,7 +9,7 @@ if (typeof global !== 'undefined' && !global.DOMMatrix) {
 
 import { NextRequest, NextResponse } from 'next/server';
 import { parseDocument } from '@/lib/documentParser';
-import { analyzeImage } from '@/lib/ai';
+import { analyzeImage, isQuotaError } from '@/lib/ai';
 
 export async function POST(req: NextRequest) {
   try {
@@ -38,13 +38,25 @@ export async function POST(req: NextRequest) {
     const parsed = await parseDocument(file.name, file.type, buffer);
 
     let text = parsed.text;
+    let usedQuotaFallback = false;
     if (parsed.isImage && parsed.base64Data) {
       try {
         const visualDescription = await analyzeImage(parsed.base64Data, file.type);
         text = `[Image Analysis for: ${file.name}]\n${visualDescription}`;
       } catch (err: any) {
         console.error('Image visual analysis error:', err);
-        text = `[Image File: ${file.name}] (Visual analysis failed: ${err.message || err})`;
+        if (isQuotaError(err)) {
+          usedQuotaFallback = true;
+          const mockDescription = `[Mock Vision Analysis]
+Visual Content: Elegant modern branding layout.
+Key Colors: Navy blue, gold accents, clean white backgrounds.
+Objects: Professional product showcase.
+Text detected: "Premium Brand Solutions".
+Vibe: High-end, premium, minimalist, target audience is professionals.`;
+          text = `[Image Analysis for: ${file.name}]\n${mockDescription}`;
+        } else {
+          text = `[Image File: ${file.name}] (Visual analysis failed: ${err.message || err})`;
+        }
       }
     }
 
@@ -54,7 +66,8 @@ export async function POST(req: NextRequest) {
       size: file.size,
       text: text,
       isImage: parsed.isImage,
-      base64Data: parsed.base64Data
+      base64Data: parsed.base64Data,
+      usedQuotaFallback: usedQuotaFallback
     });
   } catch (error: any) {
     console.error('File parsing route error:', error);

@@ -161,7 +161,8 @@ export default function FileUploader({
                 size: fileToUpload.size,
                 originalSize,
                 optimizedSize,
-                isCompressed
+                isCompressed,
+                usedQuotaFallback: data.usedQuotaFallback
               }
             : f
         )

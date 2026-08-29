@@ -22,6 +22,7 @@ export default function Home() {
   const [regeneratingPostIds, setRegeneratingPostIds] = useState<number[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isDemoMode, setIsDemoMode] = useState(true); // Default to true, updated on mount
+  const [quotaWarning, setQuotaWarning] = useState<boolean>(false);
 
   // Check demo mode status on mount
   useEffect(() => {
@@ -64,6 +65,7 @@ export default function Home() {
     setIsGenerating(true);
     setError(null);
     setGeneratedCalendar(null);
+    setQuotaWarning(false);
 
     // Aggregate text context from all successfully parsed files
     const referenceText = files
@@ -106,6 +108,9 @@ export default function Home() {
 
       const calendar = await res.json();
       setGeneratedCalendar(calendar);
+      if (calendar.usedQuotaFallback) {
+        setQuotaWarning(true);
+      }
     } catch (err: any) {
       console.error('Generate handler error:', err);
       setError(err.message || 'An error occurred during AI compilation. Please retry.');
@@ -167,6 +172,9 @@ export default function Home() {
       }
 
       const newPost = await res.json();
+      if (newPost.usedQuotaFallback) {
+        setQuotaWarning(true);
+      }
       
       // Update in-memory calendar state
       setGeneratedCalendar(prev => {
@@ -191,7 +199,15 @@ export default function Home() {
     setFiles([]);
     setSelectedIndustry(null);
     setSelectedDuration(null);
+    setQuotaWarning(false);
   };
+
+  // Reactive check for quota warning from any source
+  const hasQuotaFallback =
+    quotaWarning ||
+    files.some(f => f.usedQuotaFallback) ||
+    generatedCalendar?.usedQuotaFallback ||
+    generatedCalendar?.posts.some(p => p.usedQuotaFallback);
 
   return (
     <div className="min-h-screen bg-slate-50/30 text-slate-900 dark:bg-slate-950 dark:text-slate-100 flex flex-col font-sans transition-colors duration-300">
@@ -202,6 +218,16 @@ export default function Home() {
       {/* 2. Main Container */}
       <main className="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
         
+        {/* Quota Warning Alert Display */}
+        {hasQuotaFallback && (
+          <div className="mb-6 p-4 bg-amber-50 border border-amber-200 text-amber-700 rounded-2xl flex items-center gap-3 dark:bg-amber-950/20 dark:border-amber-900/30 dark:text-amber-400 max-w-7xl mx-auto animate-fade-in shadow-sm">
+            <AlertCircle className="h-5 w-5 flex-shrink-0 text-amber-500" />
+            <div className="text-sm font-semibold">
+              AI quota temporarily unavailable — using demo generation
+            </div>
+          </div>
+        )}
+
         {/* State A: Processing Loader */}
         {isGenerating && (
           <div className="flex items-center justify-center py-16">

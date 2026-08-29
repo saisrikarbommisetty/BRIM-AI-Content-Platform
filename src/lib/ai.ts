@@ -2,6 +2,29 @@ import { GeneratedCalendar, Post } from '../types';
 import { industryConfigs } from '../config/industryIntelligence';
 import { generateDemoCalendar, generateDemoSinglePost, getSimulatedDates } from './mockData';
 
+export class GeminiError extends Error {
+  status?: number;
+  constructor(message: string, status?: number) {
+    super(message);
+    this.name = 'GeminiError';
+    this.status = status;
+  }
+}
+
+export function isQuotaError(error: any): boolean {
+  if (!error) return false;
+  if (error.status === 429) return true;
+  const msg = (error.message || '').toLowerCase();
+  return (
+    msg.includes('429') ||
+    msg.includes('resource_exhausted') ||
+    msg.includes('resource exhausted') ||
+    msg.includes('rate limit') ||
+    msg.includes('quota') ||
+    msg.includes('exhausted')
+  );
+}
+
 // Retrieves Gemini API Key securely on the server
 function getApiKey(): string | null {
   return process.env.GEMINI_API_KEY || null;
@@ -9,6 +32,11 @@ function getApiKey(): string | null {
 
 // Analyzes image using Gemini Vision API
 export async function analyzeImage(imgData: string, mimeType: string): Promise<string> {
+  // Support manual/simulated 429 testing
+  if (process.env.MOCK_GEMINI_429 === 'true' || (imgData && imgData.includes('FORCE_GEMINI_429'))) {
+    throw new GeminiError("MOCK ERROR: Gemini API rate limit exceeded.", 429);
+  }
+
   const apiKey = getApiKey();
   if (!apiKey) {
     console.log("No Gemini API key found, using mock vision analysis.");
@@ -64,7 +92,7 @@ Vibe: High-end, premium, minimalist, target audience is professionals.`;
   if (!response.ok) {
     const errText = await response.text();
     console.error("Gemini Image Analysis API error:", errText);
-    throw new Error(`Gemini Image Analysis failed with status ${response.status}: ${errText}`);
+    throw new GeminiError(`Gemini Image Analysis failed with status ${response.status}: ${errText}`, response.status);
   }
 
   const result = await response.json();
@@ -135,6 +163,11 @@ Strictly ensure that:
 
 // REST call to Gemini API
 async function callGemini(parts: any[], schema: any): Promise<any> {
+  // Support manual/simulated 429 testing
+  if (process.env.MOCK_GEMINI_429 === 'true' || parts.some(p => typeof p.text === 'string' && p.text.includes('FORCE_GEMINI_429'))) {
+    throw new GeminiError("MOCK ERROR: Gemini API rate limit exceeded.", 429);
+  }
+
   const apiKey = getApiKey();
   if (!apiKey) {
     throw new Error("Gemini API key is not configured.");
@@ -167,7 +200,7 @@ async function callGemini(parts: any[], schema: any): Promise<any> {
   if (!response.ok) {
     const errText = await response.text();
     console.error("Gemini API error response:", errText);
-    throw new Error(`Gemini API Request failed with status ${response.status}: ${errText}`);
+    throw new GeminiError(`Gemini API Request failed with status ${response.status}: ${errText}`, response.status);
   }
 
   const result = await response.json();
@@ -294,6 +327,14 @@ export async function generateContentCalendar(
     };
   } catch (error: any) {
     console.error("AI Calendar Generation Error:", error);
+    if (isQuotaError(error)) {
+      console.log("Gemini rate limit/quota error hit during calendar generation. Falling back to Demo Mode.");
+      const demoCalendar = generateDemoCalendar(industry, duration, referenceText);
+      return {
+        ...demoCalendar,
+        usedQuotaFallback: true
+      };
+    }
     // In case of any API / structural failure, fallback to Demo Mode rather than crashing
     throw new Error(error.message || "Failed to generate AI calendar.");
   }
@@ -371,6 +412,17 @@ Match the JSON output schema exactly.
     };
   } catch (error: any) {
     console.error("AI Single Post Regeneration Error:", error);
+    if (isQuotaError(error)) {
+      console.log("Gemini rate limit/quota error hit during single post regeneration. Falling back to Demo Mode.");
+      const avoidPillars = existingCalendar
+        .filter(p => p.postNumber !== postNumber)
+        .map(p => p.contentPillar);
+      const demoPost = generateDemoSinglePost(industry, postNumber, date, referenceText, avoidPillars);
+      return {
+        ...demoPost,
+        usedQuotaFallback: true
+      };
+    }
     throw new Error(error.message || "Failed to regenerate single post.");
   }
 }
