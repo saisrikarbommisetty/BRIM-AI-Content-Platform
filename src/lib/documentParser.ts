@@ -17,6 +17,12 @@ export async function parsePdf(buffer: Buffer): Promise<string> {
     // @ts-ignore
     const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
     
+    // Dynamically import the worker and register it globally to bypass serverless filesystem resolution errors
+    // @ts-ignore
+    const pdfjsWorker = await import('pdfjs-dist/legacy/build/pdf.worker.mjs');
+    const globalScope = (typeof globalThis !== 'undefined' ? globalThis : typeof global !== 'undefined' ? global : typeof window !== 'undefined' ? window : {}) as any;
+    globalScope.pdfjsWorker = pdfjsWorker;
+    
     const uint8Array = new Uint8Array(buffer);
     const loadingTask = pdfjs.getDocument({
       data: uint8Array,
