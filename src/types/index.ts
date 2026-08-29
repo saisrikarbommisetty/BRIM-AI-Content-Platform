@@ -23,6 +23,9 @@ export interface ReferenceFile {
   status: 'processing' | 'success' | 'error';
   errorMessage?: string;
   base64Data?: string;
+  originalSize?: number;
+  optimizedSize?: number;
+  isCompressed?: boolean;
 }
 
 export type DurationOption = '1week' | '2weeks' | '1month';

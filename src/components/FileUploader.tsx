@@ -5,6 +5,7 @@ import { UploadCloud, FileText, Trash2, HelpCircle, CheckCircle, AlertCircle, Sp
 import { ReferenceFile, IndustryOption } from '../types';
 import { sampleReferenceData } from '../lib/mockData';
 import { industryConfigs } from '../config/industryIntelligence';
+import { preprocessImage } from '../lib/imageHelper';
 
 interface FileUploaderProps {
   files: ReferenceFile[];
@@ -84,8 +85,45 @@ export default function FileUploader({
 
     // Call /api/upload
     try {
+      let fileToUpload = file;
+      let isCompressed = false;
+      let originalSize = file.size;
+      let optimizedSize = file.size;
+
+      const fileExtension = file.name.split('.').pop()?.toLowerCase();
+      const isImage = ['jpg', 'jpeg', 'png'].includes(fileExtension || '') || file.type.startsWith('image/');
+
+      if (isImage) {
+        try {
+          const result = await preprocessImage(file);
+          fileToUpload = result.file;
+          isCompressed = result.isCompressed;
+          originalSize = result.originalSize;
+          optimizedSize = result.optimizedSize;
+
+          // Update entry metadata with optimized file details
+          setFiles(prev =>
+            prev.map(f =>
+              f.id === tempId
+                ? {
+                    ...f,
+                    name: fileToUpload.name,
+                    type: fileToUpload.type,
+                    size: fileToUpload.size,
+                    originalSize,
+                    optimizedSize,
+                    isCompressed
+                  }
+                : f
+            )
+          );
+        } catch (preprocessErr) {
+          console.error('Client-side image preprocessing error, falling back to original:', preprocessErr);
+        }
+      }
+
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append('file', fileToUpload);
 
       const res = await fetch('/api/upload', {
         method: 'POST',
@@ -119,7 +157,11 @@ export default function FileUploader({
                 status: 'success',
                 content: data.text,
                 base64Data: data.base64Data, // Save base64 for image vision
-                type: data.type
+                type: data.type,
+                size: fileToUpload.size,
+                originalSize,
+                optimizedSize,
+                isCompressed
               }
             : f
         )
@@ -254,9 +296,28 @@ export default function FileUploader({
                   <p className="text-sm font-bold text-slate-800 dark:text-slate-200 truncate">
                     {file.name}
                   </p>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    {formatSize(file.size)} • {file.type.split('/').pop()?.toUpperCase() || 'FILE'}
-                  </p>
+                  <div className="text-xs text-slate-400 mt-0.5 flex flex-wrap items-center gap-1.5">
+                    {file.isCompressed ? (
+                      <>
+                        <span className="line-through text-slate-400/80">{formatSize(file.originalSize || file.size)}</span>
+                        <span className="font-semibold text-emerald-600 dark:text-emerald-450">{formatSize(file.optimizedSize || file.size)}</span>
+                        <span className="text-[10px] px-1.5 py-0.5 font-bold uppercase tracking-wider rounded bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/30">
+                          Compressed
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span>{formatSize(file.size)}</span>
+                        {file.type.startsWith('image/') && (
+                          <span className="text-[10px] px-1.5 py-0.5 font-semibold rounded bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border border-slate-200/30 dark:border-slate-700/30">
+                            Optimized
+                          </span>
+                        )}
+                      </>
+                    )}
+                    <span>•</span>
+                    <span className="font-medium">{file.type.split('/').pop()?.toUpperCase() || 'FILE'}</span>
+                  </div>
                 </div>
               </div>
 
